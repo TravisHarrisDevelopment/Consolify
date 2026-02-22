@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Consolify": {
+      "commandName": "Project",
+      "commandLineArgs": "Play spotify:album:0vNBQof86Lv5gLuf26ML7o"
+    }
+  }
+}
