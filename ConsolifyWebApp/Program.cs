@@ -93,6 +93,103 @@ namespace ConsolifyWebApp
 
             app.MapGet("/api/token", () => new { token = _spotifyToken });
 
+            // Search albums by name
+            app.MapGet("/api/search/albums", async (string? q, int? limit) =>
+            {
+                if (string.IsNullOrWhiteSpace(q))
+                    return Results.BadRequest("Query parameter 'q' is required.");
+
+                var count = Math.Clamp(limit ?? 10, 1, 20);
+
+                try
+                {
+                    var url = $"https://api.spotify.com/v1/search?q={Uri.EscapeDataString(q)}&type=album&limit={count}";
+                    var response = await SpotifyGetAsync(url);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var error = await response.Content.ReadAsStringAsync();
+                        Console.WriteLine($"Album search error: {response.StatusCode} - {error}");
+                        return Results.Problem($"Spotify search failed: {response.StatusCode}");
+                    }
+
+                    var json = await response.Content.ReadAsStringAsync();
+                    var data = JsonSerializer.Deserialize<JsonElement>(json);
+                    var items = data.GetProperty("albums").GetProperty("items");
+
+                    var results = new List<AlbumResult>();
+                    foreach (var item in items.EnumerateArray())
+                    {
+                        var id = item.GetProperty("id").GetString() ?? "";
+                        var name = item.GetProperty("name").GetString() ?? "";
+                        var uri = item.GetProperty("uri").GetString() ?? "";
+
+                        string? imageUrl = null;
+                        if (item.GetProperty("images").GetArrayLength() > 0)
+                            imageUrl = item.GetProperty("images")[0].GetProperty("url").GetString();
+
+                        var artistNames = new List<string>();
+                        foreach (var artist in item.GetProperty("artists").EnumerateArray())
+                            artistNames.Add(artist.GetProperty("name").GetString() ?? "");
+                        var artists = string.Join(", ", artistNames);
+
+                        results.Add(new AlbumResult(id, name, uri, imageUrl, artists));
+                    }
+
+                    return Results.Ok(results);
+                }
+                catch (Exception ex)
+                {
+                    return Results.Problem(ex.Message);
+                }
+            });
+
+            // Search artists by name
+            app.MapGet("/api/search/artists", async (string? q, int? limit) =>
+            {
+                if (string.IsNullOrWhiteSpace(q))
+                    return Results.BadRequest("Query parameter 'q' is required.");
+
+                var count = Math.Clamp(limit ?? 10, 1, 20);
+
+                try
+                {
+                    var url = $"https://api.spotify.com/v1/search?q={Uri.EscapeDataString(q)}&type=artist&limit={count}";
+                    var response = await SpotifyGetAsync(url);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var error = await response.Content.ReadAsStringAsync();
+                        Console.WriteLine($"Artist search error: {response.StatusCode} - {error}");
+                        return Results.Problem($"Spotify search failed: {response.StatusCode}");
+                    }
+
+                    var json = await response.Content.ReadAsStringAsync();
+                    var data = JsonSerializer.Deserialize<JsonElement>(json);
+                    var items = data.GetProperty("artists").GetProperty("items");
+
+                    var results = new List<ArtistResult>();
+                    foreach (var item in items.EnumerateArray())
+                    {
+                        var id = item.GetProperty("id").GetString() ?? "";
+                        var name = item.GetProperty("name").GetString() ?? "";
+                        var uri = item.GetProperty("uri").GetString() ?? "";
+
+                        string? imageUrl = null;
+                        if (item.GetProperty("images").GetArrayLength() > 0)
+                            imageUrl = item.GetProperty("images")[0].GetProperty("url").GetString();
+
+                        results.Add(new ArtistResult(id, name, uri, imageUrl));
+                    }
+
+                    return Results.Ok(results);
+                }
+                catch (Exception ex)
+                {
+                    return Results.Problem(ex.Message);
+                }
+            });
+
             app.MapPost("/api/device", async (HttpRequest request) =>
             {
                 using var reader = new StreamReader(request.Body);
@@ -326,5 +423,16 @@ namespace ConsolifyWebApp
         {
             return await SpotifyPutAsync(url, null);
         }
+
+        private static async Task<HttpResponseMessage> SpotifyGetAsync(string url)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _spotifyToken);
+            return await _spotifyClient.SendAsync(request);
+        }
     }
+
+    public record AlbumResult(string Id, string Name, string Uri, string? ImageUrl, string Artists);
+    public record ArtistResult(string Id, string Name, string Uri, string? ImageUrl);
 }
